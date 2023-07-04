@@ -374,8 +374,8 @@ class DataProcess:
 if __name__ == '__main__':
     dp = DataProcess(DB)
     dp.init_table()
-    dp.file2database(20230627)
-    dp.update2database('20230627')
+    dp.file2database(20230630)
+    dp.update2database('20230630')
 
 
 
