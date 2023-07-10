@@ -4,7 +4,7 @@
 # File name     : util.py
 # Project name  : OFRisk
 
-import datetime
+from datetime import datetime, date
 import sqlite3 as sl
 import sql_text as st
 import config_Text as ct
@@ -26,17 +26,15 @@ commodityPattern = re.compile(r'^[A-Za-z]{1,2}')
 instrumentPattern = re.compile(r'^[A-Za-z0-9]{4,6}')
 callputPattern = re.compile(r'[A-Za-z]{1,2}')
 DB = 'D:/OFRisk/OFRisk.db'
-workPath = "D:/OFRisk/YYYYMMDD/"
+workPath = "D:/log/YYYYMMDD/"
 fileTypes = ['融行日结算单', '市场监控中心日结算单', '东证期货结算单', '期现销购', '镒链日终', '飞豹']
 accounts = ['201888', '201913', '88760378', '88760665']
-
+option_account = '88760665'
 def toNextDate(date):
     if int(str(date)[-2:]) >= 31:
         return date + 70
     else:
         return date + 1
-
-
 def isNan(input):
     # print(input, type(input))
     if not isinstance(input, float) and not isinstance(input, int):
@@ -47,19 +45,13 @@ def isNan(input):
         return float(input)
     elif isinstance(input, int):
         return int(input)
-
-
 def isStrNan(input):
-    if isinstance(input, str) or isinstance(input, pd.Timestamp):
+    if isinstance(input, str)  or isinstance(input, date):
         return input
     else:
         return ""
-
-
 def timestamp2Str(input):
     return datetime.fromtimestamp(input).strftime("%Y-%m-%d %H:%M:%S")
-
-
 def getIndexPrice(indexName):
     if 'IC' in indexName:
         return 'IC'
@@ -69,8 +61,6 @@ def getIndexPrice(indexName):
         return 'IM'
     else:
         return 'IH'
-
-
 def returnValid(keyWord, dataFrame):
     for sentence in dataFrame.itertuples(index=False):
         if keyWord in sentence:
@@ -226,6 +216,45 @@ def getIndexMultiplier(indexName):
     else:
         return 300
 
+class FIFO:
+    def __init__(self, dataBase, report_date, month_end):
+        self.history = {}
+        self.profit = {}
+        self.dataBase = dataBase
+        self.report_date = report_date
+        self.month_end = month_end
+        self.load_inventory()
+    def isCommodity(self, input, commodityList):
+        for item in commodityList:
+            #print(item, input)
+            if input in item:
+                return 1
+            else:
+                return 0
+    def load_inventory(self):
+        connection = sl.connect(self.dataBase)
+        cn = connection.cursor()
+        commodityList = cn.execute(st.commodityListStr).fetchall()
+        print("list:", commodityList)
+        folder_name = workPath.replace('YYYYMMDD', str(self.month_end) + '/' + '存货汇总')
+        if os.path.exists(folder_name):
+            print("Processing folder 存货汇总 for date: ", self.month_end)
+            for fileName in listdir(folder_name):
+                print("Processing file: ", fileName)
+                df = pd.read_excel(fileName,sheet_name=[0])
+                #for item in df.values():
+                    #for line in item.itertuples():
+                        #commodityName = str(line[1]).split('（')[0]
+                        #print(commodityName)
+                        #if self.isCommodity(commodityName, commodityList):
+                            #print(commodityName)
+
+    def calculate_fifo_pnl(self):
+        connection = sl.connect(self.dataBase)
+        cn = connection.cursor()
+        history = cn.execute(st.fifoPnLStr.format('2023', '05')).fetchall()
+        #for line in history:
+            #print(line)
 
 class DataProcess:
     def __init__(self, dataBase):
@@ -273,7 +302,12 @@ class DataProcess:
         tableDelete = connection.cursor()
         for table in st.tables:
             #print("deleting table: ", st.DeleteByDateStr.format(table, date))
-            tableDelete.execute(st.DeleteByDateStr.format(table, date))
+            try:
+                tableDelete.execute(st.DeleteByDateStr.format(table, date))
+            except Exception as sqlError:
+                #print(sqlError)
+                pass
+            continue
         connection.commit()
         tableDelete.close()
         connection.close()
@@ -296,22 +330,25 @@ class DataProcess:
                 indexTable['IM'] = item[2]
             elif '000905.SH' in item[1]:
                 indexTable['IC'] = item[2]
-
-        connection = sl.connect(DB.replace('YYYYMMDD', date))
-        insertData = connection.cursor()
-        for item in price_df.itertuples():
-            strData = '"' + item[1].split('.')[0] + '",' + date + ',' + str(isNan(item[2])) + ',' + str(
-                isNan(item[3])) + ',' + str(isNan(item[4])) + ',' + str(isNan(item[5])) + ',' + str(isNan(item[6]))
-            # print(st.InsertDataStr.format('marketData', strData))
-            insertData.execute(st.InsertDataStr.format('marketData', strData))
-        for item in indexList:
-            strData = '"' + item + '",' + date + ',' + str(indexTable[getIndexPrice(item)]) + ',0,' + str(
-                getIndexMultiplier(item)) + ',0,0'
-            # print(strData)
-            insertData.execute(st.InsertDataStr.format('marketData', strData))
-        connection.commit()
-        insertData.close()
-        connection.close()
+        try:
+            connection = sl.connect(DB.replace('YYYYMMDD', date))
+            insertData = connection.cursor()
+            for item in price_df.itertuples():
+                strData = '"' + item[1].split('.')[0] + '",' + date + ',' + str(isNan(item[2])) + ',' + str(
+                    isNan(item[3])) + ',' + str(isNan(item[4])) + ',' + str(isNan(item[5])) + ',' + str(isNan(item[6]))
+                # print(st.InsertDataStr.format('marketData', strData))
+                insertData.execute(st.InsertDataStr.format('marketData', strData))
+            for item in indexList:
+                strData = '"' + item + '",' + date + ',' + str(indexTable[getIndexPrice(item)]) + ',0,' + str(
+                    getIndexMultiplier(item)) + ',0,0'
+                # print(strData)
+                insertData.execute(st.InsertDataStr.format('marketData', strData))
+            connection.commit()
+            insertData.close()
+            connection.close()
+        except Exception as sqlError:
+            print(sqlError)
+            pass
 
     def process_file(self, file, file_type, connection, date):
         futures = {}
@@ -369,7 +406,6 @@ class DataProcess:
                     futures[future][0]) + ', 0, ' + str(futures[future][1]) + ', 0'
                 # print(st.InsertDataStr.format('future', strFuture))
                 cn.execute(st.InsertDataStr.format('future', strFuture))
-
             for option in options:
                 strOption = '"' + option.split('.')[0] + '", "' + option.split('.')[1] + '",' + str(
                     pnlDetail['交易日期']) + ',"' + commodityPattern.match(option).group(0) + '","' + CallPut[
@@ -412,43 +448,47 @@ class DataProcess:
                     # print(type(pd.to_datetime(data[header.index('合同用印日期')])))
                     strData = '"' + isStrNan(data[header.index('商品大类')]) + '", "' + isStrNan(
                         data[header.index('商品名称')]) + '", "' + str(
-                        isStrNan(data[header.index('合同用印日期')])) + '",' + str(
+                        isStrNan(data[header.index('合同用印日期')].date())) + '",' + str(
                         isNan(data[header.index('合同数量')])) + ', ' + str(
                         isNan(data[header.index('合同单价')])) + ', ' + str(
                         isNan(data[header.index('结算单价')])) + ', ' + str(
                         isNan(data[header.index('结算重量')])) + ', ' + str(
                         isNan(data[header.index('提单出库')])) + ', ' + str(
                         isNan(data[header.index('实际出库')])) + ', "' + str(
-                        isStrNan(data[header.index('出库时间')])) + '", "' + str(
+                        isStrNan(data[header.index('出库时间')].date())) + '", "' + str(
                         isStrNan(data[header.index('客户')])) + '", "' + str(
                         isStrNan(data[header.index('合同号')])) + '", "' + str(
-                        isStrNan(data[header.index('收款日期')])) + '", ' + str(
+                        isStrNan(data[header.index('收款日期')].date())) + '", ' + str(
                         isNan(data[header.index('收款金额')])) + ', ' + str(
                         isNan(data[header.index('已收保证金')])) + ', "' + str(
-                        isStrNan(data[header.index('业务类型')])) + '","out","' + str(date) + get_short_id() + '"'
+                        isStrNan(data[header.index('业务类型')])) + '","out",' + str(date) +',"' + get_short_id() + '"'
+                    #print(strData)
+                    #print(type(data[header.index('合同用印日期')].date()))
                     cn.execute(st.InsertDataStr.format('commodity', strData))
-                    # print(strData)
             elif '提单入库' in header:
                 for data in df.itertuples(index=False):
                     # print(type(data[header.index('付款金额')]))
                     strData = '"' + isStrNan(data[header.index('商品大类')]) + '", "' + isStrNan(
                         data[header.index('商品名称')]) + '", "' + str(
-                        isStrNan(data[header.index('合同用印日期')])) + '",' + str(
+                        isStrNan(data[header.index('合同用印日期')].date())) + '",' + str(
                         isNan(data[header.index('合同数量')])) + ', ' + str(
                         isNan(data[header.index('合同单价')])) + ', ' + str(
                         isNan(data[header.index('结算单价')])) + ', ' + str(
                         isNan(data[header.index('结算重量')])) + ', ' + str(
                         isNan(data[header.index('提单入库')])) + ', ' + str(
                         isNan(data[header.index('实际入库')])) + ', "' + str(
-                        isStrNan(data[header.index('入库时间')])) + '", "' + str(
+                        isStrNan(data[header.index('入库时间')].date())) + '", "' + str(
                         isStrNan(data[header.index('供货商')])) + '", "' + str(
                         isStrNan(data[header.index('合同号')])) + '", "' + str(
-                        isStrNan(data[header.index('付款日期')])) + '", ' + str(
+                        isStrNan(data[header.index('付款日期')].date())) + '", ' + str(
                         isNan(data[header.index('付款金额')])) + ', ' + str(
                         isNan(data[header.index('已收保证金')])) + ', "' + str(
                         isStrNan(data[header.index('业务类型')])) + '","in",' + str(date) + ',"' + get_short_id() + '"'
                     cn.execute(st.InsertDataStr.format('commodity', strData))
-                    # print(strData)
+                    #print(strData)
+            connection.commit()
+            cn.close()
+
 
     def file2database(self, date, fileTypes):
         connection = sl.connect(self.dataBase)
@@ -487,6 +527,9 @@ class DataProcess:
         connection = sl.connect(DB)
         cn = connection.cursor()
         last_eod = cn.execute(st.lastEODStr.format(report_date)).fetchall()
+        cn.execute(st.addOptionValueStr.format(option_account,report_date))
+        #print(st.addOptionValueStr.format(option_account,report_date))
+        connection.commit()
         #print(isNan(last_eod[0][0]))
         dtd_pnl = cn.execute(st.DTDPnlStr.format(report_date, isNan(last_eod[0][0]))).fetchall()
         #print(st.DTDPnlStr.format(report_date, isNan(last_eod[0][0])))
@@ -531,6 +574,8 @@ def main(init, filetypes, db, str_date, end_date, report_date, month_end, manual
         for folder in fileTypes:
             pathlib.Path(workPath.replace('YYYYMMDD', str(eod_date) + '/' + folder)).mkdir(parents=True, exist_ok=True)
 
+    #fifo_pnl = FIFO(db, report_date, month_end)
+    #fifo_pnl.calculate_fifo_pnl()
 
 if __name__ == '__main__':
     main()
