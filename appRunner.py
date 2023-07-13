@@ -27,7 +27,7 @@ instrumentPattern = re.compile(r'^[A-Za-z0-9]{4,6}')
 callputPattern = re.compile(r'[A-Za-z]{1,2}')
 DB = 'D:/OFRisk/OFRisk.db'
 workPath = "D:/log/YYYYMMDD/"
-fileTypes = ['融行日结算单', '市场监控中心日结算单', '东证期货结算单', '期现销购', '镒链日终', '飞豹']
+fileTypes = ['融行日结算单', '市场监控中心日结算单', '东证期货结算单', '期现销购', '镒链日终', '飞豹','存货汇总']
 accounts = ['201888', '201913', '88760378', '88760665']
 option_account = '88760665'
 def toNextDate(date):
@@ -71,8 +71,6 @@ def returnValid(keyWord, dataFrame):
         else:
             continue
     return ""
-
-
 def findKeywords(keyWords, dataFrame, mode):
     if mode == 1:
         for sentence in dataFrame.itertuples():
@@ -83,30 +81,22 @@ def findKeywords(keyWords, dataFrame, mode):
             if keyWords in sentence[1]:
                 return sentence.Index
     return 0
-
-
 def getValueDict(targetList, dataFrame, function):
     result = {}
     for item in targetList:
         result[item] = function(item, dataFrame)
     return result
-
-
 def listdir(path):
     fileList = []
     for home, dirs, files in os.walk(path):
         for filename in files:
             fileList.append(os.path.join(home, filename))
     return fileList
-
-
 def hasSeparator(productName):
     if '_' in productName:
         return productName.split('_')[0] + '","' + productName.split('_')[1]
     else:
         return productName + '","o'
-
-
 def getPositionDetail(targetList, dataFrame, file_type):
     if file_type == '融行日结算单':
         futures = {}
@@ -175,8 +165,20 @@ def getPositionDetail(targetList, dataFrame, file_type):
                                                                          sentence[0].split('|')[15].strip(),
                                                                          sentence[0].split('|')[1].strip()]
         return option
-
-
+    elif file_type == '出入金':
+        cash = 0
+        for item in targetList:
+            pos_target = findKeywords(item, dataFrame, 1)
+            if pos_target == 0:
+                break
+            sub_df = dataFrame[pos_target + 2:]
+            for sentence in sub_df.itertuples():
+                if '合计' in sentence:
+                    break
+                elif '出入金' in sentence:
+                    print(sentence[4],sentence[5])
+                    cash = cash + isNan(sentence[4]) - isNan(sentence[5])
+        return cash
 def get_short_id():
     id = str(uuid.uuid4()).replace("-", '')  # 注意这里需要用uuid4
     buffer = []
@@ -186,8 +188,6 @@ def get_short_id():
         val = int(id[start:end], 16)
         buffer.append(array[val % 62])
     return "".join(buffer)
-
-
 def getInstrumentList(instruments):
     commodity = "'"
     index = []
@@ -202,8 +202,6 @@ def getInstrumentList(instruments):
     commodity = commodity[:-1]
     commodity += "'"
     return commodity, index
-
-
 def getIndexMultiplier(indexName):
     if 'O' in indexName:
         return 100
@@ -230,25 +228,43 @@ class FIFO:
             if input in item:
                 return 1
             else:
-                return 0
+                continue
+        return 0
     def load_inventory(self):
         connection = sl.connect(self.dataBase)
         cn = connection.cursor()
         commodityList = cn.execute(st.commodityListStr).fetchall()
-        print("list:", commodityList)
+        #print("list:", commodityList)
         folder_name = workPath.replace('YYYYMMDD', str(self.month_end) + '/' + '存货汇总')
         if os.path.exists(folder_name):
-            print("Processing folder 存货汇总 for date: ", self.month_end)
+            print("Processing folder 存货汇总 for date: ", self.report_date)
             for fileName in listdir(folder_name):
                 print("Processing file: ", fileName)
-                df = pd.read_excel(fileName,sheet_name=[0])
-                #for item in df.values():
-                    #for line in item.itertuples():
-                        #commodityName = str(line[1]).split('（')[0]
+                df0 = pd.read_excel(fileName,sheet_name=[0])
+                df1 = pd.read_excel(fileName,sheet_name=[1])
+                print(df1)
+                for item in df0.values():
+                    for line in item.itertuples():
+                        commodityName = str(line[1]).split('（')[0]
                         #print(commodityName)
-                        #if self.isCommodity(commodityName, commodityList):
-                            #print(commodityName)
-
+                        if self.isCommodity(commodityName, commodityList):
+                            strData='"'+commodityName + '",'+str(isNan(line[2]))+','+str(isNan(line[3]))+',"'+get_short_id()+'",'+str(self.report_date)
+                            print(strData)
+                            cn.execute(st.InsertDataStr.format('inventory',strData))
+                for item in df1.values():
+                    for line in item.itertuples():
+                        if '-' in str(line[1]):
+                            commodityName = str(line[1]).split('-')[1]
+                        else:
+                            commodityName = str(line[1])
+                        #print(commodityName)
+                        if self.isCommodity(commodityName, commodityList):
+                            strData='"'+commodityName + '",'+str(isNan(line[2]))+','+str(isNan(line[3]))+',"'+get_short_id()+'",'+str(self.report_date)
+                            print(strData)
+                            cn.execute(st.InsertDataStr.format('inventory',strData))
+        connection.commit()
+        cn.close()
+        connection.close()
     def calculate_fifo_pnl(self):
         connection = sl.connect(self.dataBase)
         cn = connection.cursor()
@@ -365,7 +381,8 @@ class DataProcess:
                 pnlDetail['上日结存']) + ',' + str(pnlDetail['当日结存']) + ',' + str(
                 pnlDetail['客户权益']) + ',' + str(
                 pnlDetail['平仓盈亏']) + ',' + str(pnlDetail['浮动盈亏']) + ',' + str(
-                pnlDetail['当日手续费']) + ',' + str(pnlDetail['保证金占用']) + ',' + str(pnlDetail['当日存取合计'])
+                pnlDetail['当日手续费']) + ',' + str(pnlDetail['保证金占用']) + ',' + str(pnlDetail['当日存取合计'])+ ',' + str(pnlDetail['当日存取合计'])
+            #print(strData)
             cn.execute(st.InsertDataStr.format('settlement', strData))
             futures, options = getPositionDetail(["持仓汇总"], df, file_type)
             for future in futures:
@@ -387,14 +404,16 @@ class DataProcess:
             cn.close()
         elif file_type == '市场监控中心日结算单':
             df = pd.read_excel(file)
+            cashio = getPositionDetail(['期货期权账户出入金明细（单位：人民币）'],df,'出入金')
+            #print('cashio: ',cashio)
             pnlDetail = getValueDict(pnl_words, df, returnValid)
             pnlDetail['交易日期'] = pnlDetail['交易日期'].replace('-', '')
             strData = '"' + str(pnlDetail['客户期货期权内部资金账户']) + '",' + str(pnlDetail['交易日期']) + ',' + str(
                 pnlDetail['上日结存']) + ',' + str(pnlDetail['当日结存']) + ',' + str(
                 pnlDetail['客户权益']) + ',' + str(
                 pnlDetail['平仓盈亏']) + ',' + str(pnlDetail['浮动盈亏']) + ',' + str(
-                pnlDetail['当日手续费']) + ',' + str(pnlDetail['保证金占用']) + ',' + str(pnlDetail['当日存取合计'])
-            # print(st.InsertDataStr.format('settlement', strData))
+                pnlDetail['当日手续费']) + ',' + str(pnlDetail['保证金占用']) + ',' + str(pnlDetail['当日存取合计'])+ ',' + str(pnlDetail['当日存取合计']-cashio)
+            #print(st.InsertDataStr.format('settlement', strData))
             cn.execute(st.InsertDataStr.format('settlement', strData))
             # insert position data
             position_words = ['期货持仓汇总', '期权持仓汇总']
@@ -523,7 +542,7 @@ class DataProcess:
         cn.close()
         connection.close()
 
-    def genProfitLoss(self, DB, month_end, report_date, manual_insert_me=0):
+    def genProfitLoss(self, DB, month_end, report_date, manual_insert_me):
         connection = sl.connect(DB)
         cn = connection.cursor()
         last_eod = cn.execute(st.lastEODStr.format(report_date)).fetchall()
@@ -531,7 +550,7 @@ class DataProcess:
         #print(st.addOptionValueStr.format(option_account,report_date))
         connection.commit()
         #print(isNan(last_eod[0][0]))
-        dtd_pnl = cn.execute(st.DTDPnlStr.format(report_date, isNan(last_eod[0][0]))).fetchall()
+        dtd_pnl = cn.execute(st.DTDPnlStr.format(report_date, isNan(last_eod[0][0]) if isNan(last_eod[0][0])!=0 else report_date)).fetchall()
         #print(st.DTDPnlStr.format(report_date, isNan(last_eod[0][0])))
         #print(dtd_pnl)
         for line in dtd_pnl:
@@ -545,6 +564,8 @@ class DataProcess:
         connection.commit()
         cn.close()
         connection.close()
+
+
 
 @click.command()
 @click.option("-init", "--init", type=int, help="input 1 to init DB, 0 to skip init")
@@ -574,7 +595,7 @@ def main(init, filetypes, db, str_date, end_date, report_date, month_end, manual
         for folder in fileTypes:
             pathlib.Path(workPath.replace('YYYYMMDD', str(eod_date) + '/' + folder)).mkdir(parents=True, exist_ok=True)
 
-    #fifo_pnl = FIFO(db, report_date, month_end)
+    fifo_pnl = FIFO(db, report_date, month_end)
     #fifo_pnl.calculate_fifo_pnl()
 
 if __name__ == '__main__':

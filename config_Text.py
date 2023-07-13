@@ -1,6 +1,6 @@
 #list to record exchange information
 exchangeList = {"cu":"SHF", "bc":"SHF", "al":"SHF", "zn":"SHF", "pb":"SHF", "ni":"SHF", "sn":"SHF", "au":"SHF", "ag":"SHF", "rb":"SHF", "wr":"SHF", "hc":"SHF", "ss":"SHF", "sc":"SHF", "lu":"SHF", "fu":"SHF", "bu":"SHF", "ru":"SHF", "nr":"SHF", "sp":"SHF","a": "DCE", "b": "DCE", "bb": "DCE", "c": "DCE", "cs": "DCE", "eb": "DCE", "eg": "DCE", "fb": "DCE", "i": "DCE", "j": "DCE", "jd": "DCE", "jm": "DCE", "l": "DCE", "lh": "DCE", "m": "DCE", "p": "DCE", "pg": "DCE", "pp": "DCE", "rr": "DCE", "v": "DCE", "y": "DCE","ap": "CZC", "cf": "CZC", "cj": "CZC", "cy": "CZC", "fg": "CZC", "jr": "CZC", "lr": "CZC", "ma": "CZC", "oi": "CZC", "pf": "CZC", "pk": "CZC", "pm": "CZC", "ri": "CZC", "rm": "CZC", "rs": "CZC", "sa": "CZC", "sf": "CZC", "sm": "CZC", "sr": "CZC", "ta": "CZC", "ur": "CZC", "wh": "CZC", "zc": "CZC","si": "GFE"}
 #manual insert ytd pnl for the first run
-ytd_pnl = ["-75191.44", "-8128109.5", "17599788.25", "315410.92"]
+ytd_pnl = ["-75191.44", "-8128109.5", "17599788.25", "315165.01"]
 #risk log config
 riskLog = {'F2':'date', 'H5':[], 'H6':['88760378']}
