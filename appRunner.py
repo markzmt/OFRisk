@@ -22,10 +22,11 @@ array = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
          "W", "X", "Y", "Z"
          ]
 CallPut = {'看跌期权': 'C', '看涨期权': 'P'}
+longShort = {'买':1, '卖':-1}
 commodityPattern = re.compile(r'^[A-Za-z]{1,2}')
-instrumentPattern = re.compile(r'^[A-Za-z0-9]{4,6}')
+instrumentPattern = re.compile(r'^[A-Za-z]{1,2}[0-9]{3,4}')
 callputPattern = re.compile(r'[A-Za-z]{1,2}')
-DB = 'D:/OFRisk/OFRisk.db'
+#DB = 'D:/OFRisk/OFRisk.db'
 workPath = "D:/log/YYYYMMDD/"
 fileTypes = ['融行日结算单', '市场监控中心日结算单', '东证期货结算单', '期现销购', '镒链日终', '飞豹','存货汇总']
 accounts = ['201888', '201913', '88760378', '88760665']
@@ -107,19 +108,28 @@ def getPositionDetail(targetList, dataFrame, file_type):
                 break
             sub_df = dataFrame[pos_target + 2:]
             for sentence in sub_df.itertuples():
-                # print(sentence)
+                #print(sentence)
                 if '合计' in sentence:
                     break
-                elif '-' not in sentence[3]:
+                #elif '-' not in sentence[3]:
+                elif len(sentence[3]) < 7:
+                    #print(sentence[3],"future")
                     if sentence[3].upper() not in futures:
                         futures[sentence[3].upper()] = [isNan(sentence[4]), isNan(sentence[6])]
                     else:
                         futures[sentence[3].upper()] = list(map(lambda x, y: x + y, futures[sentence[3].upper()],
                                                                 [isNan(sentence[4]), isNan(sentence[6])]))
+                    #print(sentence[3].upper(), futures[sentence[3].upper()])
+                    futures[sentence[3].upper()].extend([isNan(sentence[8]),isNan(sentence[9]),isNan(sentence[10]),isNan(sentence[11])])
+                    #print(sentence[3].upper(),futures[sentence[3].upper()])
                 else:
+                    #print(sentence[3],"option")
                     if sentence[3].upper() not in options:
                         options[sentence[3].upper()] = [isNan(sentence[4]), isNan(sentence[6]), isNan(sentence[16]),
                                                         isNan(sentence[17])]
+                        #print(sentence[3].upper(), options[sentence[3].upper()])
+                        options[sentence[3].upper()].extend([isNan(sentence[8]),isNan(sentence[9]),isNan(sentence[11])])
+                        #print(sentence[3].upper(),options[sentence[3].upper()])
         return futures, options
     elif file_type == '市场监控中心日结算单':
         futures = {}
@@ -135,18 +145,20 @@ def getPositionDetail(targetList, dataFrame, file_type):
                     break
                 elif '期货' in item:
                     if sentence[1] not in futures:
-                        futures[sentence[1]] = [isNan(sentence[2]), isNan(sentence[4])]
+                        futures[sentence[1]] = [isNan(sentence[2]), isNan(sentence[4]), isNan(sentence[8]), isNan(sentence[9]),isNan(sentence[6]), isNan(sentence[7])]
                     else:
                         futures[sentence[1]] = list(
-                            map(lambda x, y: x + y, futures[sentence[1]], [isNan(sentence[2]), isNan(sentence[4])]))
+                            map(lambda x, y: x + y, futures[sentence[1]], [isNan(sentence[2]), isNan(sentence[4]), isNan(sentence[8]), isNan(sentence[9]),0,0]))
+                    #print(futures[sentence[1]])
                 else:
                     if sentence[1] + '.' + sentence[2] + '.' + sentence[3] not in options:
                         options[sentence[1] + '.' + sentence[2] + '.' + sentence[3]] = [isNan(sentence[5]),
-                                                                                        isNan(sentence[7])]
+                                                                                        isNan(sentence[7]),isNan(sentence[11]),isNan(sentence[9]),isNan(sentence[10])]
                     else:
                         options[sentence[1] + '.' + sentence[2] + '.' + sentence[3]] = list(
                             map(lambda x, y: x + y, options[sentence[1] + '.' + sentence[2] + '.' + sentence[3]],
-                                [isNan(sentence[5]), isNan(sentence[7])]))
+                                [isNan(sentence[5]), isNan(sentence[7]),isNan(sentence[11]),0,0]))
+                    #print(options[sentence[1]])
         return futures, options
     elif file_type == '东证期货结算单':
         option = {}
@@ -176,9 +188,23 @@ def getPositionDetail(targetList, dataFrame, file_type):
                 if '合计' in sentence:
                     break
                 elif '出入金' in sentence:
-                    print(sentence[4],sentence[5])
+                    #print(sentence[4],sentence[5])
                     cash = cash + isNan(sentence[4]) - isNan(sentence[5])
         return cash
+    elif file_type == 'RH_trades':
+        trades = {}
+        for item in targetList:
+            pos_target = findKeywords(item, dataFrame, 1)
+            if pos_target == 0:
+                break
+            sub_df = dataFrame[pos_target + 2:]
+            for sentence in sub_df.itertuples():
+                if '合计' in sentence:
+                    break
+                else:
+                    trades[get_short_id()] = [sentence[2],isNan(sentence[5]),longShort[sentence[3]]*isNan(sentence[6]),isNan(sentence[7]),isNan(sentence[9]),isNan(sentence[10]),isNan(sentence[11]),sentence[13]]
+        return trades
+
 def get_short_id():
     id = str(uuid.uuid4()).replace("-", '')  # 注意这里需要用uuid4
     buffer = []
@@ -381,25 +407,29 @@ class DataProcess:
                 pnlDetail['上日结存']) + ',' + str(pnlDetail['当日结存']) + ',' + str(
                 pnlDetail['客户权益']) + ',' + str(
                 pnlDetail['平仓盈亏']) + ',' + str(pnlDetail['浮动盈亏']) + ',' + str(
-                pnlDetail['当日手续费']) + ',' + str(pnlDetail['保证金占用']) + ',' + str(pnlDetail['当日存取合计'])+ ',' + str(pnlDetail['当日存取合计'])
+                pnlDetail['当日手续费']) + ',' + str(pnlDetail['保证金占用']) + ',' + str(pnlDetail['当日存取合计'])+ ',0'
             #print(strData)
             cn.execute(st.InsertDataStr.format('settlement', strData))
             futures, options = getPositionDetail(["持仓汇总"], df, file_type)
             for future in futures:
                 strFuture = '"' + future + '",' + str(pnlDetail['交易日期']) + ',"' + commodityPattern.match(
                     future).group(
-                    0) + '",' + str(pnlDetail['账户']) + ',' + str(futures[future][0]) + ', 0, ' + str(
+                    0) + '",' + str(pnlDetail['账户']) + ','+ str(futures[future][2])+ ','+ str(futures[future][3])+ ','+ str(futures[future][5])+ ','+ str(futures[future][4])+ ',' + str(futures[future][0]) + ', 0, ' + str(
                     futures[future][1]) + ', 0'
-                # print(st.InsertDataStr.format('future', strFuture))
+                #print(st.InsertDataStr.format('future', strFuture))
                 cn.execute(st.InsertDataStr.format('future', strFuture))
             for option in options:
                 strOption = '"' + option + '","' + instrumentPattern.match(option).group(
-                    0) + '",' + str(pnlDetail['交易日期']) + ',"' + callputPattern.match(option).group(0) + '","' + \
-                            callputPattern.findall(option)[1] + '",' + str(pnlDetail['账户']) + ',' + str(
+                    0) + '",' + str(pnlDetail['交易日期']) + ',"' + callputPattern.match(option).group(0) + '","' + callputPattern.findall(option)[1] + '",' + str(pnlDetail['账户']) + ',' + str(options[option][4])+ ','+ str(options[option][5])+ ','+ str(options[option][6])+ ','+ str(
                     options[option][0]) + ',0,' + str(options[option][1]) + ',0,' + str(options[option][2]) + ',' + str(
                     options[option][3])
-                # print(st.InsertDataStr.format('option', strOption))
+                #print(st.InsertDataStr.format('option', strOption))
                 cn.execute(st.InsertDataStr.format('option', strOption))
+            trades = getPositionDetail(["成交汇总"], df, 'RH_trades')
+            for trade in trades:
+                strTrade = '"' + trades[trade][0] + '","' + str(pnlDetail['账户']) +'",'+ str(trades[trade][1]) + ',' + str(trades[trade][2])+ ',' + str(trades[trade][3])+ ',' + str(trades[trade][4])+ ',' + str(trades[trade][5])+ ',' + str(trades[trade][6])+ ',"'+trade+'",' + trades[trade][7]
+                print(strTrade)
+                cn.execute(st.InsertDataStr.format('trade', strTrade))
             connection.commit()
             cn.close()
         elif file_type == '市场监控中心日结算单':
@@ -421,14 +451,21 @@ class DataProcess:
             # print(options)
             for future in futures:
                 strFuture = '"' + future + '",' + str(pnlDetail['交易日期']) + ',"' + commodityPattern.match(
-                    future).group(0) + '",' + str(pnlDetail['客户期货期权内部资金账户']) + ',' + str(
+                    future).group(0) + '",' + str(pnlDetail['客户期货期权内部资金账户'])+ ',' + str(
+                    futures[future][4]) + ',' + str(
+                    futures[future][5]) + ',' + str(
+                    futures[future][3]) + ',' + str(
+                    futures[future][2]) + ',' + str(
                     futures[future][0]) + ', 0, ' + str(futures[future][1]) + ', 0'
                 # print(st.InsertDataStr.format('future', strFuture))
                 cn.execute(st.InsertDataStr.format('future', strFuture))
             for option in options:
                 strOption = '"' + option.split('.')[0] + '", "' + option.split('.')[1] + '",' + str(
                     pnlDetail['交易日期']) + ',"' + commodityPattern.match(option).group(0) + '","' + CallPut[
-                                option.split('.')[2]] + '",' + str(pnlDetail['客户期货期权内部资金账户']) + ',' + str(
+                                option.split('.')[2]] + '",' + str(pnlDetail['客户期货期权内部资金账户'])+ ',' + str(
+                    options[option][3]) + ',' + str(
+                    options[option][4]) + ',' + str(
+                    options[option][2]) + ',' + str(
                     options[option][0]) + ', 0, ' + str(options[option][1]) + ', 0, 0, 0'
                 # print(strOption)
                 cn.execute(st.InsertDataStr.format('option', strOption))
